@@ -1,11 +1,10 @@
 from rest_framework import serializers
-from .models import CustomUser , Booking
+from .models import CustomUser , Ticket, Train
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser 
-        fields = ['id', 'username', 'email', 'password', 'is_owner']  
-        # extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'username', 'email', 'password', 'is_owner']
 
     def create(self, validated_data):
         user = CustomUser.objects.create_user(  
@@ -16,12 +15,16 @@ class UserSerializer(serializers.ModelSerializer):
         )
         return user
     
-
-
-
-
-class BookingSerializer(serializers.ModelSerializer):
+class TicketSerializer(serializers.ModelSerializer):
+    age = serializers.IntegerField(min_value=5, max_value=100)
+    departure_date = serializers.DateField(required=True)
     class Meta:
-        model = Booking
+        model = Ticket
         fields = '__all__'
-        read_only_fields = ['user', 'booking_date'] 
+        read_only_fields = ['user','seat_number', 'status', 'pnr_number', 'available_seats']
+
+
+class TrainSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Train
+        fields = '__all__'
