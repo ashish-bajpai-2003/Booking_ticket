@@ -39,7 +39,8 @@ class Ticket(models.Model):
     departure_time = models.TimeField(default="14:30:00")
     # origin = models.CharField(max_length=100)
     destination = models.CharField(max_length=100)
-    pnr_number = models.CharField(max_length=8, unique=True, default=generate_pnr)
+    pnr_number = models.CharField(max_length=8, default=generate_pnr, db_index=True)
+    name = models.CharField(max_length=100) 
 
 
     #  JSON.LOAD PAYLOAD
@@ -49,8 +50,6 @@ class Ticket(models.Model):
     
 
 
-
-from django.contrib.postgres.fields import ArrayField
 class Train(models.Model):
     train_number = models.CharField(max_length=10, unique=True)
     train_name = models.CharField(max_length=100)
@@ -60,13 +59,30 @@ class Train(models.Model):
     arrival_time = models.TimeField(default="14:30:00")
     departure_date = models.DateField()
     total_seats = models.PositiveIntegerField(default=100)
-    booked_seats = models.PositiveIntegerField(null=True)
-    available_seats = models.PositiveIntegerField(default=100) 
+
+    # ✅ Replaced deprecated import
+    seat_info = models.JSONField(default=dict)
+
+    booked_seats = models.IntegerField(default=0)
+    available_seats = models.IntegerField(default=100)
+
+    from django.contrib.postgres.fields import ArrayField  # You can keep this
     seat_info_array = ArrayField(
         models.CharField(max_length=20),
         blank=True,
         null=True
     )
+
     def __str__(self):
         return f"{self.train_name} ({self.train_number})"
+    
 
+class Stoppage(models.Model):
+    train = models.ForeignKey(Train, related_name='stoppages', on_delete=models.CASCADE)
+    station_name = models.CharField(max_length=100)
+    arrival_time = models.TimeField()
+    departure_time = models.TimeField()
+    order = models.IntegerField()
+
+    def __str__(self):
+        return f"{self.train.train_number} - {self.station_name}"
