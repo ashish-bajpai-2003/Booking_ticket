@@ -62,14 +62,13 @@ class BookTicketView(APIView):
             return Response({"error": "Invalid departure date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            train = Train.objects.get(train_number=train_number, departure_date=departure_date)
+            train = Train.objects.get(train_number=train_number)  # ✅ Fixed line
         except Train.DoesNotExist:
-            return Response({"error": "Train not found for the given date."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "Train not found for the given number."}, status=status.HTTP_404_NOT_FOUND)
 
         if seat_class not in train.seat_info_array:
             return Response({"error": f"{seat_class} is not available for this train."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check booked seats in the class
         booked_tickets = Ticket.objects.filter(
             train_number=train_number,
             departure_date=departure_date,
@@ -94,13 +93,37 @@ class BookTicketView(APIView):
         else:
             status_value = 'waiting'
             booked_seats_list = [None] * number_of_seats
-            train.available_seats -= number_of_seats  # This will go negative for waiting list
+            train.available_seats -= number_of_seats  # waiting ke liye bhi decrease
             train.save()
 
-        # Generate a single PNR for this group booking
         group_pnr = generate_pnr()
-
         created_tickets = []
+
+        # Fare Calculation
+        fare_per_km = {
+            '1AC':5,
+            '2AC': 2.5,  # Example fare per km for 2AC
+            '3AC': 1.8,  # Example fare per km for 3AC
+            'Sleeper': 1.2,  # Example fare per km for Sleeper
+        }
+        
+        # Define train types for fare adjustment (Example)
+        train_type_multiplier = {
+            'Vande Bharat': 1.5,  # Vande Bharat train fare multiplier
+            'Rajdhani': 1.3,      # Rajdhani train fare multiplier
+            'Express': 1.1,       # Express train fare multiplier
+            'Superfast': 1.2      # Superfast train fare multiplier
+        }
+
+        # Calculate the base fare based on train and class
+        if train_type := train.train_type:
+            multiplier = train_type_multiplier.get(train_type, 1)  # Default multiplier is 1
+        else:
+            multiplier = 1
+
+        # Assume `train.distance` is the distance between source and destination in kilometers
+        base_fare_per_seat = fare_per_km.get(seat_class, 1) * train.distance * multiplier
+
         for i, seat in enumerate(booked_seats_list):
             passenger_info = passengers[i]
             name = passenger_info.get('name')
@@ -109,6 +132,7 @@ class BookTicketView(APIView):
             if not name or age is None:
                 return Response({"error": "Each passenger must have a name and age."}, status=status.HTTP_400_BAD_REQUEST)
 
+            total_fare = base_fare_per_seat * number_of_seats  # Total fare calculation
             ticket_data = {
                 'user': request.user.id,
                 'train_number': train_number,
@@ -122,7 +146,8 @@ class BookTicketView(APIView):
                 'number_of_seats': 1,
                 'age': age,
                 'name': name,
-                'pnr_number': group_pnr
+                'pnr_number': group_pnr,
+                'fare': total_fare  # Add the fare to the ticket data
             }
 
             serializer = TicketSerializer(data=ticket_data)
@@ -140,8 +165,10 @@ class BookTicketView(APIView):
         return Response({
             "message": f"{len(created_tickets)} ticket(s) {'booked' if status_value == 'booked' else 'added to waiting list'} successfully.",
             "pnr": group_pnr,
-            "tickets": created_tickets
+            "tickets": created_tickets,
+            "fare": total_fare  # Include the fare in the response
         }, status=status.HTTP_201_CREATED)
+
     
 import logging
 from django.db import transaction
@@ -212,42 +239,57 @@ from datetime import date as today_date
 from rest_framework.response import Response  # Isko import karna na bhulo
 
 from datetime import date as today_date
+from django.db.models import Q
 class SearchTrainView(APIView):
     def get(self, request):
+        # Get parameters from the request
         source = request.query_params.get('source')
         destination = request.query_params.get('destination')
         train_number = request.query_params.get('train_number')
-        date = request.query_params.get('date')
+        train_name = request.query_params.get('train_name')
+        date = request.query_params.get('date') or today_date.today().isoformat()
 
-        if train_number:  # If train_number is provided, we ignore date
-            trains = Train.objects.filter(train_number=train_number)
+        # Get all trains by default
+        trains = Train.objects.all()
 
-        else:
-            if not all([source, destination]):
-                return Response({"error": "Please provide source and destination"}, status=400)
+        # Filter trains based on train_number, if provided
+        if train_number:
+            trains = trains.filter(train_number__iexact=train_number)
+        
+        # Filter trains based on train_name, if provided
+        if train_name:
+            trains = trains.filter(train_name__icontains=train_name)
 
-            # Default date = today
-            if not date:
-                date = today_date.today().isoformat()  
-
-            trains = Train.objects.filter(
-                source__iexact=source,
-                destination__iexact=destination,
+        # Filter trains based on source and destination
+        if source and destination:
+            trains = trains.filter(
                 departure_date=date
-            )
+            ).filter(
+                Q(source__iexact=source) | Q(stoppages__station__iexact=source),
+                Q(destination__iexact=destination) | Q(stoppages__station__iexact=destination)
+            ).distinct()
 
-        # If trains are found, return them, otherwise show error message
+        # If trains exist, serialize and return data
         if trains.exists():
-            serializer = TrainSerializer(trains, many=True)
-            return Response(serializer.data)
+            train_data = []
+            for train in trains:
+                # Check if the train has running days
+                if train.running_days:
+                    run_days = ", ".join(train.running_days)
+                else:
+                    run_days = "Daily"
+
+                # Serialize the train data and add the running days information
+                train_info = TrainSerializer(train).data
+                train_info["running_days"] = run_days  # Add running_days info
+                train_data.append(train_info)
+
+            return Response(train_data)
         else:
             return Response({"error": "No trains found"}, status=404)
 
-
-
-
-        # Admin POST request — add train
     def post(self, request):
+        # Admin-only POST request to add a new train
         if not request.user.is_staff:
             return Response({"error": "Only admin can add train"}, status=403)
 

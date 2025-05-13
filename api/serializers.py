@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CustomUser , Ticket, Train, Stoppage
+from .models import CustomUser , Ticket, Train
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -17,7 +17,8 @@ class UserSerializer(serializers.ModelSerializer):
     
 class TicketSerializer(serializers.ModelSerializer):
     age = serializers.IntegerField(required=False, allow_null=True)
-    departure_date = serializers.DateField(required=True)
+    # departure_date = serializers.DateField(required=True)
+    # departure_time = serializers.TimeField(required=True)
     seat_number = serializers.CharField(required=False, allow_null=True)
     class Meta:
         model = Ticket
@@ -25,16 +26,13 @@ class TicketSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'pnr_number': {'required': False}  
         }
-        read_only_fields = ['user', 'available_seats', 'de']
+        read_only_fields = ['user', 'available_seats']
+
+
 
 
 class TrainSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = Train
-        fields = '__all__'
-
-
-class StoppageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Stoppage
         fields = '__all__'
