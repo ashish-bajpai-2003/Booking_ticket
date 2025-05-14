@@ -28,6 +28,66 @@ class UserListView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 from .models import generate_pnr
+def calculate_partial_fare(train, source, destination, seat_class):
+    # Fetching source and destination distances
+    if source == train.source:
+        from_dist = 0
+    else:
+        from_dist = next((s['distance'] for s in train.stoppages if s['station'] == source), None)
+
+    if destination == train.destination:
+        to_dist = train.distance
+    else:
+        to_dist = next((s['distance'] for s in train.stoppages if s['station'] == destination), None)
+
+    # Ensure valid distance ranges
+    if from_dist is None or to_dist is None or from_dist >= to_dist:
+        return None
+
+    km = to_dist - from_dist
+
+    # Base fare per km rates for different seat classes
+    base_fare_per_km = {
+        '1AC': 5,
+        '2AC': 2.5,
+        '3AC': 1.8,
+        'sleeper': 1.5,
+    }
+
+    # Train type multipliers
+    train_type_multiplier = {
+        'Vande Bharat': 2.5,
+        'Rajdhani': 1.4,
+        'Express': 1.2,
+        'Superfast': 1.3
+    }
+
+    # Train type mapping (if payload has train number, map to train type)
+    train_type_mapping = {
+        "12520": "Vande Bharat",  # Here you can add other train numbers and their types
+    }
+
+    # Get train type from mapping (based on train_number)
+    train_type = train_type_mapping.get(train.train_number, "Unknown")
+
+    # Fetch multiplier for the train type
+    multiplier = train_type_multiplier.get(train_type, 1)
+
+    print(f"Train Type: {train_type}, Multiplier: {multiplier}")  # Debugging line
+    print(f"Base Fare per km for {seat_class}: {base_fare_per_km.get(seat_class, 'Not Found')}")  # Debugging line
+    
+    # Fare calculation with multiplier
+    fare = km * base_fare_per_km.get(seat_class, 1) * multiplier
+    print(f"Fare Calculation: {fare}")  # Debugging line
+    
+    return fare
+
+
+
+ 
+
+
+
 class BookTicketView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -39,10 +99,12 @@ class BookTicketView(APIView):
         departure_date = request.data.get('departure_date')
         seat_class = request.data.get('seat_class')
         number_of_seats = request.data.get('number_of_seats')
+        source = request.data.get('source')
+        destination = request.data.get('destination')
         passengers = request.data.get('passengers', [])
 
-        if not all([train_number, departure_date, seat_class, number_of_seats]):
-            return Response({"error": "Train number, departure date, seat class and number of seats are required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([train_number, departure_date, seat_class, number_of_seats, source, destination]):
+            return Response({"error": "Train number, departure date, seat class, number of seats, source and destination are required."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             number_of_seats = int(number_of_seats)
@@ -62,12 +124,17 @@ class BookTicketView(APIView):
             return Response({"error": "Invalid departure date format. Use YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            train = Train.objects.get(train_number=train_number)  # ✅ Fixed line
+            train = Train.objects.get(train_number=train_number)
         except Train.DoesNotExist:
             return Response({"error": "Train not found for the given number."}, status=status.HTTP_404_NOT_FOUND)
 
         if seat_class not in train.seat_info_array:
             return Response({"error": f"{seat_class} is not available for this train."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculate fare per seat based on partial distance
+        fare_per_seat = calculate_partial_fare(train, source, destination, seat_class)
+        if fare_per_seat is None:
+            return Response({"error": "Invalid source or destination station."}, status=status.HTTP_400_BAD_REQUEST)
 
         booked_tickets = Ticket.objects.filter(
             train_number=train_number,
@@ -93,36 +160,11 @@ class BookTicketView(APIView):
         else:
             status_value = 'waiting'
             booked_seats_list = [None] * number_of_seats
-            train.available_seats -= number_of_seats  # waiting ke liye bhi decrease
+            train.available_seats -= number_of_seats  # even for waiting
             train.save()
 
         group_pnr = generate_pnr()
         created_tickets = []
-
-        # Fare Calculation
-        fare_per_km = {
-            '1AC':5,
-            '2AC': 2.5,  # Example fare per km for 2AC
-            '3AC': 1.8,  # Example fare per km for 3AC
-            'Sleeper': 1.2,  # Example fare per km for Sleeper
-        }
-        
-        # Define train types for fare adjustment (Example)
-        train_type_multiplier = {
-            'Vande Bharat': 1.5,  # Vande Bharat train fare multiplier
-            'Rajdhani': 1.3,      # Rajdhani train fare multiplier
-            'Express': 1.1,       # Express train fare multiplier
-            'Superfast': 1.2      # Superfast train fare multiplier
-        }
-
-        # Calculate the base fare based on train and class
-        if train_type := train.train_type:
-            multiplier = train_type_multiplier.get(train_type, 1)  # Default multiplier is 1
-        else:
-            multiplier = 1
-
-        # Assume `train.distance` is the distance between source and destination in kilometers
-        base_fare_per_seat = fare_per_km.get(seat_class, 1) * train.distance * multiplier
 
         for i, seat in enumerate(booked_seats_list):
             passenger_info = passengers[i]
@@ -132,7 +174,7 @@ class BookTicketView(APIView):
             if not name or age is None:
                 return Response({"error": "Each passenger must have a name and age."}, status=status.HTTP_400_BAD_REQUEST)
 
-            total_fare = base_fare_per_seat * number_of_seats  # Total fare calculation
+            total_fare = fare_per_seat  # Fare is per passenger now
             ticket_data = {
                 'user': request.user.id,
                 'train_number': train_number,
@@ -141,13 +183,13 @@ class BookTicketView(APIView):
                 'seat_number': seat,
                 'status': status_value,
                 'event_name': f"Train {train_number} Ride",
-                'source': train.source,
-                'destination': train.destination,
+                'source': source,
+                'destination': destination,
                 'number_of_seats': 1,
                 'age': age,
                 'name': name,
                 'pnr_number': group_pnr,
-                'fare': total_fare  # Add the fare to the ticket data
+                'fare': total_fare
             }
 
             serializer = TicketSerializer(data=ticket_data)
@@ -166,9 +208,9 @@ class BookTicketView(APIView):
             "message": f"{len(created_tickets)} ticket(s) {'booked' if status_value == 'booked' else 'added to waiting list'} successfully.",
             "pnr": group_pnr,
             "tickets": created_tickets,
-            "fare": total_fare  # Include the fare in the response
+            "fare_per_passenger": fare_per_seat,
+            "total_fare": fare_per_seat * number_of_seats
         }, status=status.HTTP_201_CREATED)
-
     
 import logging
 from django.db import transaction
@@ -298,3 +340,55 @@ class SearchTrainView(APIView):
             serializer.save()
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
+    
+
+
+
+
+
+
+
+
+
+
+# # views.py
+from django.db.models import Count, Q, Avg, Max
+class ORMExamplesView(APIView):
+    def get(self, request):
+        data = {}
+ 
+        # Retrieve all tickets with 'booked' status
+        data['filter_tickets'] = list(Ticket.objects.filter(status='booked').values('pnr_number', 'status', 'fare', 'train_number'))
+
+        # Retrieve all 'Vande Bharat' trains
+        data['filter_trains'] = list(Train.objects.filter(train_type='Vande Bharat').values('train_name', 'train_number'))
+
+        # Calculate the average fare of all tickets
+        data['avg_fare'] = Ticket.objects.aggregate(avg_fare=Avg('fare'))
+
+        # Find the maximum fare from all tickets
+        data['max_fare'] = Ticket.objects.aggregate(max_fare=Max('fare'))
+
+        # Tickets that are either 'booked' or 'waiting'
+        data['q_tickets'] = list(
+            Ticket.objects.filter(Q(status='booked') | Q(status='waiting')).values('pnr_number', 'status', 'fare')
+        )
+
+        # Trains that go from 'New Delhi' to 'Kanpur'
+        data['q_trains'] = list(
+            Train.objects.filter(Q(source='New Delhi') & Q(destination='Kanpur')).values('train_name', 'train_number')
+        )
+
+        # 5. select_related / prefetch_related
+        # For Ticket with related user data (using select_related to optimize ForeignKey lookup)
+        data['select_related_ticket'] = list(
+            Ticket.objects.select_related('user').all().values('user__username', 'pnr_number', 'status')[:5]
+        )
+
+        # For Prefetching related tickets for each CustomUser (using prefetch_related for reverse relation)
+        data['prefetch_related_user'] = list(
+            CustomUser.objects.prefetch_related('ticket_set').annotate(ticket_count=Count('ticket')).values('username', 'ticket_count')[:5]
+        )
+
+        return Response(data)
+ 

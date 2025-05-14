@@ -38,8 +38,8 @@ class Ticket(models.Model):
     number_of_seats = models.PositiveIntegerField()
     train_number = models.CharField(max_length=20)
     departure_date = models.DateField()
-    # departure_datetime = models.DateTimeField(default=get_current_datetime)  # Combined date and time
     destination = models.CharField(max_length=100)
+    source = models.CharField(max_length=100)
     pnr_number = models.CharField(max_length=8, default=generate_pnr, db_index=True, unique=True)
     name = models.CharField(max_length=100)
 
@@ -47,8 +47,7 @@ class Ticket(models.Model):
         return f"PNR: {self.pnr_number} | Seat: {self.seat_number or 'Waiting'} | Status: {self.status}"
 
 def default_running_days():
-    # If the train is daily, return all days
-    return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+       return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 class Train(models.Model):
     train_number = models.CharField(max_length=10, unique=True)
@@ -59,13 +58,8 @@ class Train(models.Model):
     arrival_time = models.TimeField(default="14:30:00")
     total_seats = models.PositiveIntegerField(default=100)
     train_creation_date = models.DateField(default=get_current_date) 
-    distance = models.IntegerField() 
-    
-
-
-    # ✅ Replaced deprecated import
+    distance = models.IntegerField()  
     seat_info = models.JSONField(default=dict)
-
     booked_seats = models.IntegerField(default=0)
     available_seats = models.IntegerField(default=100)
     stoppages = models.JSONField(default=list)
@@ -92,9 +86,6 @@ class Train(models.Model):
         default=default_running_days,
         help_text="Select the days on which the train runs",
     )
-
-
-
 
     train_type = models.CharField(max_length=50)  # e.g., Express, Superfast, Vande Bharat
     distance_in_km = models.PositiveIntegerField()

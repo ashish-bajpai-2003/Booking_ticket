@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path
-from api.views import UserRegistrationView, UserListView, BookTicketView, CancelTicketView, TicketStatusView, SearchTrainView
+from api.views import UserRegistrationView, UserListView, BookTicketView, CancelTicketView, TicketStatusView, SearchTrainView, ORMExamplesView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
@@ -13,6 +13,7 @@ urlpatterns = [
     path('cancel/<int:ticket_id>/', CancelTicketView.as_view(), name='cancel-ticket'),
     path('ticket/status/<str:pnr_number>/', TicketStatusView.as_view(), name='ticket-status'),
     path('search-trains/', SearchTrainView.as_view(), name='search-trains'),
+    path('perform-orm/', ORMExamplesView.as_view()),
 
 
 ]

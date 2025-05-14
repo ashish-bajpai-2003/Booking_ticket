@@ -32,7 +32,15 @@ class TicketSerializer(serializers.ModelSerializer):
 
 
 class TrainSerializer(serializers.ModelSerializer):
-
+    train_name = serializers.SerializerMethodField()
     class Meta:
         model = Train
         fields = '__all__'
+        # read_only_fields = ["train_name"]
+
+    def get_train_name(self, obj):
+        try:
+            train = Train.objects.get(train_number=obj.train_number)
+            return train.train_name
+        except Train.DoesNotExist:
+            return None
