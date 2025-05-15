@@ -8,19 +8,23 @@ from rest_framework.views import APIView
 from .serializers import UserSerializer, TicketSerializer, TrainSerializer
 from rest_framework.permissions import IsAuthenticated
 from .permission import IsOwnerOnlyCanViewUsers
+from .decorators import admin_required, normal_user_required
 
 
-class UserRegistrationView(APIView):
+class UserRegistrationView(APIView):   #   user can Register here. 
+    
     def post(self, request):
-        serializer = UserSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+        try:
+            serializer = UserSerializer(data=request.data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({"message": "User registered successfully!"}, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"message": "Invalid Payload!!!"}, status=status.HTTP_400_BAD_REQUEST)
 
 class UserListView(APIView):
-    permission_classes = [IsAuthenticated, IsOwnerOnlyCanViewUsers]
+    permission_classes = [IsAuthenticated, IsOwnerOnlyCanViewUsers]   # Check the user is authenticated or not. 
 
     def get(self, request):
         users = CustomUser.objects.all()
@@ -88,20 +92,22 @@ def calculate_partial_fare(train, source, destination, seat_class):
 
 
 
-class BookTicketView(APIView):
-    permission_classes = [IsAuthenticated]
+class BookTicketView(APIView):      #   User can book the ticket. 
+    @normal_user_required       #   Check user authentication.
+    # permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if request.user.is_owner:
+
+        if request.user.is_owner:      #   Check the type of user. 
             return Response({"error": "Only normal users can book tickets."}, status=status.HTTP_403_FORBIDDEN)
 
-        train_number = request.data.get('train_number')
-        departure_date = request.data.get('departure_date')
-        seat_class = request.data.get('seat_class')
-        number_of_seats = request.data.get('number_of_seats')
-        source = request.data.get('source')
-        destination = request.data.get('destination')
-        passengers = request.data.get('passengers', [])
+        train_number = request.data.get('train_number')      # Pass the train number.
+        departure_date = request.data.get('departure_date')    # Pass the departure date.
+        seat_class = request.data.get('seat_class')     # Pass the seat_class in which you want to travel(Like= 'Sleeper)
+        number_of_seats = request.data.get('number_of_seats')   ## Pass the number of seats that you want to book.
+        source = request.data.get('source')   ## Pass the Source station
+        destination = request.data.get('destination')   # Pass the destination
+        passengers = request.data.get('passengers', [])   # Pass the passenger name and his age here. 
 
         if not all([train_number, departure_date, seat_class, number_of_seats, source, destination]):
             return Response({"error": "Train number, departure date, seat class, number of seats, source and destination are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -146,7 +152,7 @@ class BookTicketView(APIView):
         class_capacity = train.total_seats // len(train.seat_info_array)
         available_count = class_capacity - booked_count
 
-        booked_seats_list = []
+        booked_seats_list = []      
         status_value = 'booked'
 
         if available_count >= number_of_seats:
@@ -175,6 +181,8 @@ class BookTicketView(APIView):
                 return Response({"error": "Each passenger must have a name and age."}, status=status.HTTP_400_BAD_REQUEST)
 
             total_fare = fare_per_seat  # Fare is per passenger now
+
+            ## All the data of user's Ticket.
             ticket_data = {
                 'user': request.user.id,
                 'train_number': train_number,
@@ -216,8 +224,11 @@ import logging
 from django.db import transaction
 logger = logging.getLogger(__name__)
 
+
+###    User can cancel the ticket.
 class CancelTicketView(APIView):
-    permission_classes = [IsAuthenticated]
+    @normal_user_required     # when user already loggedin.
+    # permission_classes = [IsAuthenticated]
 
     def patch(self, request, ticket_id):
         # Start a transaction to ensure all operations are atomic
@@ -263,7 +274,7 @@ class CancelTicketView(APIView):
             return Response({'message': 'Ticket cancelled successfully and waiting ticket confirmed if any.'}, status=status.HTTP_200_OK)
 
 
-class TicketStatusView(APIView):
+class TicketStatusView(APIView):  # Check the status of your ticket.
     # permission_classes = [IsAuthenticated]
 
     def get(self, request, pnr_number):
@@ -280,16 +291,16 @@ class TicketStatusView(APIView):
 from datetime import date as today_date
 from rest_framework.response import Response  # Isko import karna na bhulo
 
-from datetime import date as today_date
+from datetime import date as today_date     # import Today Date
 from django.db.models import Q
-class SearchTrainView(APIView):
+class SearchTrainView(APIView):   #   User can Search the train.
     def get(self, request):
         # Get parameters from the request
-        source = request.query_params.get('source')
-        destination = request.query_params.get('destination')
-        train_number = request.query_params.get('train_number')
-        train_name = request.query_params.get('train_name')
-        date = request.query_params.get('date') or today_date.today().isoformat()
+        source = request.query_params.get('source')   #   pass the Origin Station.
+        destination = request.query_params.get('destination')   #   pass the your destination here. 
+        train_number = request.query_params.get('train_number')  #    pass the train number.
+        train_name = request.query_params.get('train_name')      #     pass the train name
+        date = request.query_params.get('date') or today_date.today().isoformat()   # pass the journey date
 
         # Get all trains by default
         trains = Train.objects.all()
@@ -330,12 +341,25 @@ class SearchTrainView(APIView):
         else:
             return Response({"error": "No trains found"}, status=404)
 
-    def post(self, request):
-        # Admin-only POST request to add a new train
-        if not request.user.is_staff:
-            return Response({"error": "Only admin can add train"}, status=403)
 
+    # @admin_required
+    # def post(self, request):
+    
+    #     # Admin-only POST request to add a new train
+    #     # if not request.user.is_staff:
+    #     #     return Response({"error": "Only admin can add train"}, status=403)
+
+    #     # serializer = TrainSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         serializer.save()
+    #         return Response(serializer.data, status=201)
+    #     return Response(serializer.errors, status=400)
+    
+    @admin_required
+    def post(self, request):
+    # Train data ko serialize karna
         serializer = TrainSerializer(data=request.data)
+    
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=201)

@@ -14,7 +14,5 @@ urlpatterns = [
     path('ticket/status/<str:pnr_number>/', TicketStatusView.as_view(), name='ticket-status'),
     path('search-trains/', SearchTrainView.as_view(), name='search-trains'),
     path('perform-orm/', ORMExamplesView.as_view()),
-
-
 ]
    

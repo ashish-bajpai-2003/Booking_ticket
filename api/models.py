@@ -5,6 +5,11 @@ from django.utils import timezone
 
 # Custom user model
 class CustomUser(AbstractUser):
+    ROLE_CHOICES = (    ## Choose the user is normal or Superuser.
+    ('OWNER', 'Owner'),
+    ('NORMAL', 'Normal'),
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     is_owner = models.BooleanField(default=False)
 
     def __str__(self):
@@ -14,13 +19,13 @@ def get_current_datetime():
 import random
 import string
 
-def generate_pnr():
+def generate_pnr():      ##    Generate the pnr of every user that wants to book the ticket. 
     return ''.join(random.choices(string.digits, k=8))
 
 def get_current_date():
     return timezone.now().date()
 
-class Ticket(models.Model):
+class Ticket(models.Model):    ## Ticket model 
     STATUS_CHOICES = (
         ('booked', 'Booked'),
         ('waiting', 'Waiting'),
@@ -49,7 +54,7 @@ class Ticket(models.Model):
 def default_running_days():
        return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-class Train(models.Model):
+class Train(models.Model):     ## The data of train that user get when he want to check the train.
     train_number = models.CharField(max_length=10, unique=True)
     train_name = models.CharField(max_length=100)
     source = models.CharField(max_length=100)
