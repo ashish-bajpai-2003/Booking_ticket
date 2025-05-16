@@ -1,7 +1,11 @@
 from django.contrib import admin
-from django.urls import path
-from api.views import UserRegistrationView, UserListView, BookTicketView, CancelTicketView, TicketStatusView, SearchTrainView, ORMExamplesView
+from django.urls import path, include
+from api.views import UserRegistrationView, UserListView, BookTicketView, CancelTicketView, TicketStatusView, SearchTrainView, ORMExamplesView, PantryItemViewSet, BookingPantryViewSet
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework.routers import DefaultRouter
+router = DefaultRouter()
+router.register(r'pantry-items', PantryItemViewSet)
+router.register(r'booking-pantry', BookingPantryViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,5 +18,6 @@ urlpatterns = [
     path('ticket/status/<str:pnr_number>/', TicketStatusView.as_view(), name='ticket-status'),
     path('search-trains/', SearchTrainView.as_view(), name='search-trains'),
     path('perform-orm/', ORMExamplesView.as_view()),
+    path('api/', include(router.urls)),
 ]
    

@@ -48,6 +48,9 @@ class Ticket(models.Model):    ## Ticket model
     pnr_number = models.CharField(max_length=8, default=generate_pnr, db_index=True, unique=True)
     name = models.CharField(max_length=100)
 
+
+
+    food_required = models.BooleanField(default=False)
     def __str__(self):
         return f"PNR: {self.pnr_number} | Seat: {self.seat_number or 'Waiting'} | Status: {self.status}"
 
@@ -100,3 +103,25 @@ class Train(models.Model):     ## The data of train that user get when he want t
         return f"{self.train_name} ({self.train_number})"
     
 
+
+
+
+
+
+class PantryItem(models.Model):
+    name = models.CharField(max_length=100)
+    price = models.DecimalField(max_digits=7, decimal_places=2)
+
+    def _str_(self):
+        return self.name
+
+class BookingPantry(models.Model):
+    booking = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="pantry_orders")
+    item = models.ForeignKey(PantryItem, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField()
+
+    def get_total_price(self):
+        return self.item.price * self.quantity
+
+    def _str_(self):
+        return f"{self.quantity} x {self.item.name} for Booking {self.booking.pnr}"

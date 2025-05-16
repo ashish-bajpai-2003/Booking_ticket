@@ -3,12 +3,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from datetime import date
 from django.shortcuts import get_object_or_404
-from .models import Ticket, CustomUser, Train
+from .models import Ticket, CustomUser, Train, PantryItem, BookingPantry
 from rest_framework.views import APIView
-from .serializers import UserSerializer, TicketSerializer, TrainSerializer
+from .serializers import UserSerializer, TicketSerializer, TrainSerializer, PantryItemSerializer,BookingPantrySerializer
 from rest_framework.permissions import IsAuthenticated
 from .permission import IsOwnerOnlyCanViewUsers
 from .decorators import admin_required, normal_user_required
+from rest_framework import viewsets
 
 
 class UserRegistrationView(APIView):   #   user can Register here. 
@@ -92,22 +93,22 @@ def calculate_partial_fare(train, source, destination, seat_class):
 
 
 
-class BookTicketView(APIView):      #   User can book the ticket. 
-    @normal_user_required       #   Check user authentication.
-    # permission_classes = [IsAuthenticated]
+class BookTicketView(APIView):    
+    @normal_user_required
 
     def post(self, request):
 
-        if request.user.is_owner:      #   Check the type of user. 
+        if request.user.is_owner:
             return Response({"error": "Only normal users can book tickets."}, status=status.HTTP_403_FORBIDDEN)
 
-        train_number = request.data.get('train_number')      # Pass the train number.
-        departure_date = request.data.get('departure_date')    # Pass the departure date.
-        seat_class = request.data.get('seat_class')     # Pass the seat_class in which you want to travel(Like= 'Sleeper)
-        number_of_seats = request.data.get('number_of_seats')   ## Pass the number of seats that you want to book.
-        source = request.data.get('source')   ## Pass the Source station
-        destination = request.data.get('destination')   # Pass the destination
-        passengers = request.data.get('passengers', [])   # Pass the passenger name and his age here. 
+        train_number = request.data.get('train_number')
+        departure_date = request.data.get('departure_date')
+        seat_class = request.data.get('seat_class')
+        number_of_seats = request.data.get('number_of_seats')
+        source = request.data.get('source')
+        destination = request.data.get('destination')
+        passengers = request.data.get('passengers', [])
+        food_required = request.data.get('food_required', False)
 
         if not all([train_number, departure_date, seat_class, number_of_seats, source, destination]):
             return Response({"error": "Train number, departure date, seat class, number of seats, source and destination are required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -137,10 +138,10 @@ class BookTicketView(APIView):      #   User can book the ticket.
         if seat_class not in train.seat_info_array:
             return Response({"error": f"{seat_class} is not available for this train."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Calculate fare per seat based on partial distance
         fare_per_seat = calculate_partial_fare(train, source, destination, seat_class)
         if fare_per_seat is None:
             return Response({"error": "Invalid source or destination station."}, status=status.HTTP_400_BAD_REQUEST)
+
 
         booked_tickets = Ticket.objects.filter(
             train_number=train_number,
@@ -152,7 +153,7 @@ class BookTicketView(APIView):      #   User can book the ticket.
         class_capacity = train.total_seats // len(train.seat_info_array)
         available_count = class_capacity - booked_count
 
-        booked_seats_list = []      
+        booked_seats_list = []
         status_value = 'booked'
 
         if available_count >= number_of_seats:
@@ -166,7 +167,7 @@ class BookTicketView(APIView):      #   User can book the ticket.
         else:
             status_value = 'waiting'
             booked_seats_list = [None] * number_of_seats
-            train.available_seats -= number_of_seats  # even for waiting
+            train.available_seats -= number_of_seats
             train.save()
 
         group_pnr = generate_pnr()
@@ -180,9 +181,8 @@ class BookTicketView(APIView):      #   User can book the ticket.
             if not name or age is None:
                 return Response({"error": "Each passenger must have a name and age."}, status=status.HTTP_400_BAD_REQUEST)
 
-            total_fare = fare_per_seat  # Fare is per passenger now
+            total_fare = fare_per_seat  # Already adjusted with food if selected
 
-            ## All the data of user's Ticket.
             ticket_data = {
                 'user': request.user.id,
                 'train_number': train_number,
@@ -197,7 +197,8 @@ class BookTicketView(APIView):      #   User can book the ticket.
                 'age': age,
                 'name': name,
                 'pnr_number': group_pnr,
-                'fare': total_fare
+                'fare': total_fare,
+                'food_required' : food_required
             }
 
             serializer = TicketSerializer(data=ticket_data)
@@ -219,7 +220,7 @@ class BookTicketView(APIView):      #   User can book the ticket.
             "fare_per_passenger": fare_per_seat,
             "total_fare": fare_per_seat * number_of_seats
         }, status=status.HTTP_201_CREATED)
-    
+
 import logging
 from django.db import transaction
 logger = logging.getLogger(__name__)
@@ -364,6 +365,18 @@ class SearchTrainView(APIView):   #   User can Search the train.
             serializer.save()
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
+    
+
+
+
+class PantryItemViewSet(viewsets.ModelViewSet):
+    queryset = PantryItem.objects.all()
+    serializer_class = PantryItemSerializer
+    permission_classes = [IsAuthenticated]
+
+class BookingPantryViewSet(viewsets.ModelViewSet):
+    queryset = BookingPantry.objects.all()
+    serializer_class = BookingPantrySerializer
     
 
 
